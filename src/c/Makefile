@@ -1,94 +1,91 @@
 # Makefile for pam_purpose PAM module
 
-# --- Directories ---
+# Compiler and flags
+CC = gcc
+# Compiler flags: -fPIC for shared libs, -Wall/-Wextra for warnings, -Werror to treat warnings as errors.
+# Hardening flags: -fstack-protector-strong, -D_FORTIFY_SOURCE=2
+CFLAGS = -fPIC -Wall -Wextra -Werror -fstack-protector-strong -D_FORTIFY_SOURCE=2
+
+# Linker and flags
+# Hardening flags: -z,relro and -z,now for security
+LDFLAGS = -shared -Wl,-z,relro -Wl,-z,now
+LDLIBS = -lpam
+
+# Pandoc for man page conversion
+PANDOC = pandoc
+
+# Source and build directories
 SRC_DIR = src
 BUILD_DIR = build
 
-# --- Variables ---
-# Tools
-CC = gcc
-INSTALL = install
-GZIP = gzip
-MANDB = mandb
+# Source files
+C_SRC = $(SRC_DIR)/pam_purpose.c
+MAN_SRC_MD = $(SRC_DIR)/pam_purpose.8.md
 
-# Compiler flags (including hardening)
-CFLAGS = -fPIC -Wall -Wextra -Werror -fstack-protector-strong -D_FORTIFY_SOURCE=2
+# Object and target files
+OBJ = $(BUILD_DIR)/pam_purpose.o
+TARGET = $(BUILD_DIR)/pam_purpose.so
+MAN_TARGET_GROFF = $(BUILD_DIR)/pam_purpose.8
+MAN_TARGET_GZ = $(MAN_TARGET_GROFF).gz
 
-# Linker flags (including hardening)
-LDFLAGS = -shared -Wl,-z,relro -Wl,-z,now
+# Default target
+all: $(TARGET) $(MAN_TARGET_GZ)
 
-# Libraries
-LIBS = -lpam
+# Rule to build the shared library
+$(TARGET): $(OBJ)
+	@echo "LD  $@"
+	@$(CC) $(LDFLAGS) -o $@ $< $(LDLIBS)
 
-# Filenames
-SOURCE_C = $(SRC_DIR)/pam_purpose.c
-OBJECT_C = $(BUILD_DIR)/pam_purpose.o
-TARGET_SO = $(BUILD_DIR)/pam_purpose.so
+# Rule to compile the C source file
+$(OBJ): $(C_SRC)
+	@echo "CC  $@"
+	@mkdir -p $(BUILD_DIR) # Ensure build directory exists
+	@$(CC) $(CFLAGS) -c -o $@ $<
 
-SOURCE_MAN = $(SRC_DIR)/pam_purpose.8
-TARGET_MAN = $(BUILD_DIR)/pam_purpose.8.gz
+# Rule to convert Markdown man page to groff format
+$(MAN_TARGET_GROFF): $(MAN_SRC_MD)
+	@echo "PANDOC $@"
+	@mkdir -p $(BUILD_DIR) # Ensure build directory exists
+	@$(PANDOC) -s -t man $< -o $@
 
-# Installation paths
-# PREFIX can be overridden, e.g., `make install PREFIX=/usr/local`
-PREFIX ?= /usr
-# Default PAM module path for 64-bit Debian/Ubuntu-based systems
-PAM_DIR = $(DESTDIR)/lib/x86_64-linux-gnu/security
-MAN_DIR = $(DESTDIR)$(PREFIX)/share/man/man8
+# Rule to compress the man page
+$(MAN_TARGET_GZ): $(MAN_TARGET_GROFF)
+	@echo "GZIP $@"
+	@gzip -c -9 $< > $@
 
+# Installation targets
+INSTALL_DIR_LIB_DEB = /lib/x86_64-linux-gnu/security
+INSTALL_DIR_LIB_RHEL = /lib64/security
+INSTALL_DIR_MAN = /usr/share/man/man8
 
-# --- Rules ---
-
-# Default rule: Build everything
-all: $(TARGET_SO) $(TARGET_MAN)
-
-# Rule for building the shared object (.so file)
-$(TARGET_SO): $(OBJECT_C)
-	$(CC) $(LDFLAGS) -o $@ $^ $(LIBS)
-
-# Rule for compiling the C source code into an object file (.o)
-# Creates the build directory if it doesn't exist.
-$(OBJECT_C): $(SOURCE_C)
-	@mkdir -p $(BUILD_DIR)
-	$(CC) $(CFLAGS) -c -o $@ $<
-
-# Rule for compressing the man page
-# Creates the build directory if it doesn't exist.
-$(TARGET_MAN): $(SOURCE_MAN)
-	@mkdir -p $(BUILD_DIR)
-	$(GZIP) -c $< > $@
-
-# Rule for installing the files on the system
-# NOTE: This command must be run with sudo
 install: all
-	@echo "Installing PAM module and man page..."
-	$(INSTALL) -d -m 755 $(PAM_DIR)
-	$(INSTALL) -m 644 $(TARGET_SO) $(PAM_DIR)/
-	@echo "PAM module installed in $(PAM_DIR)/$(notdir $(TARGET_SO))"
-	
-	$(INSTALL) -d -m 755 $(MAN_DIR)
-	$(INSTALL) -m 644 $(TARGET_MAN) $(MAN_DIR)/
-	@echo "Man page installed in $(MAN_DIR)/$(notdir $(TARGET_MAN))"
-	
-	@echo "Updating man database..."
-	$(MANDB)
-	@echo "Installation complete."
+	@echo "Installing module..."
+	@if [ -d /lib/x86_64-linux-gnu/ ]; then \
+		sudo install -m 644 $(TARGET) $(INSTALL_DIR_LIB_DEB)/; \
+	else \
+		sudo install -m 644 $(TARGET) $(INSTALL_DIR_LIB_RHEL)/; \
+	fi
+	@echo "Installing man page to $(INSTALL_DIR_MAN)..."
+	@sudo install -m 644 $(MAN_TARGET_GZ) $(INSTALL_DIR_MAN)/
+	@echo "Updating man-db..."
+	@sudo mandb
 
-# Rule for uninstalling
-# NOTE: This command must be run with sudo
 uninstall:
-	@echo "Uninstalling PAM module and man page..."
-	rm -f $(PAM_DIR)/$(notdir $(TARGET_SO))
-	rm -f $(MAN_DIR)/$(notdir $(TARGET_MAN))
-	@echo "Updating man database..."
-	$(MANDB)
-	@echo "Uninstallation complete."
+	@echo "Uninstalling module..."
+	@if [ -d /lib/x86_64-linux-gnu/ ]; then \
+		sudo rm -f $(INSTALL_DIR_LIB_DEB)/pam_purpose.so; \
+	else \
+		sudo rm -f $(INSTALL_DIR_LIB_RHEL)/pam_purpose.so; \
+	fi
+	@echo "Uninstalling man page..."
+	@sudo rm -f $(INSTALL_DIR_MAN)/pam_purpose.8.gz
+	@echo "Updating man-db..."
+	@sudo mandb
 
-# Rule for cleaning up build files
+# Clean target
 clean:
-	@echo "Cleaning up..."
-	rm -rf $(BUILD_DIR)
+	@echo "Cleaning up build artifacts..."
+	@rm -rf $(BUILD_DIR)
 
-# Tell 'make' that these targets are not files
 .PHONY: all install uninstall clean
-
 
