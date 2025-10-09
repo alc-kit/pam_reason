@@ -1,5 +1,9 @@
 # Makefile for pam_purpose PAM module
 
+# --- Directories ---
+SRC_DIR = src
+BUILD_DIR = build
+
 # --- Variables ---
 # Tools
 CC = gcc
@@ -17,12 +21,12 @@ LDFLAGS = -shared -Wl,-z,relro -Wl,-z,now
 LIBS = -lpam
 
 # Filenames
-SOURCE_C = pam_purpose.c
-OBJECT_C = $(SOURCE_C:.c=.o)
-TARGET_SO = pam_purpose.so
+SOURCE_C = $(SRC_DIR)/pam_purpose.c
+OBJECT_C = $(BUILD_DIR)/pam_purpose.o
+TARGET_SO = $(BUILD_DIR)/pam_purpose.so
 
-SOURCE_MAN = pam_purpose.8
-TARGET_MAN = $(SOURCE_MAN).gz
+SOURCE_MAN = $(SRC_DIR)/pam_purpose.8
+TARGET_MAN = $(BUILD_DIR)/pam_purpose.8.gz
 
 # Installation paths
 # PREFIX can be overridden, e.g., `make install PREFIX=/usr/local`
@@ -42,11 +46,15 @@ $(TARGET_SO): $(OBJECT_C)
 	$(CC) $(LDFLAGS) -o $@ $^ $(LIBS)
 
 # Rule for compiling the C source code into an object file (.o)
+# Creates the build directory if it doesn't exist.
 $(OBJECT_C): $(SOURCE_C)
+	@mkdir -p $(BUILD_DIR)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 # Rule for compressing the man page
+# Creates the build directory if it doesn't exist.
 $(TARGET_MAN): $(SOURCE_MAN)
+	@mkdir -p $(BUILD_DIR)
 	$(GZIP) -c $< > $@
 
 # Rule for installing the files on the system
@@ -55,11 +63,11 @@ install: all
 	@echo "Installing PAM module and man page..."
 	$(INSTALL) -d -m 755 $(PAM_DIR)
 	$(INSTALL) -m 644 $(TARGET_SO) $(PAM_DIR)/
-	@echo "PAM module installed in $(PAM_DIR)/$(TARGET_SO)"
+	@echo "PAM module installed in $(PAM_DIR)/$(notdir $(TARGET_SO))"
 	
 	$(INSTALL) -d -m 755 $(MAN_DIR)
 	$(INSTALL) -m 644 $(TARGET_MAN) $(MAN_DIR)/
-	@echo "Man page installed in $(MAN_DIR)/$(TARGET_MAN)"
+	@echo "Man page installed in $(MAN_DIR)/$(notdir $(TARGET_MAN))"
 	
 	@echo "Updating man database..."
 	$(MANDB)
@@ -69,8 +77,8 @@ install: all
 # NOTE: This command must be run with sudo
 uninstall:
 	@echo "Uninstalling PAM module and man page..."
-	rm -f $(PAM_DIR)/$(TARGET_SO)
-	rm -f $(MAN_DIR)/$(TARGET_MAN)
+	rm -f $(PAM_DIR)/$(notdir $(TARGET_SO))
+	rm -f $(MAN_DIR)/$(notdir $(TARGET_MAN))
 	@echo "Updating man database..."
 	$(MANDB)
 	@echo "Uninstallation complete."
@@ -78,7 +86,7 @@ uninstall:
 # Rule for cleaning up build files
 clean:
 	@echo "Cleaning up..."
-	rm -f $(OBJECT_C) $(TARGET_SO) $(TARGET_MAN)
+	rm -rf $(BUILD_DIR)
 
 # Tell 'make' that these targets are not files
 .PHONY: all install uninstall clean
