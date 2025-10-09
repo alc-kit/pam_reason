@@ -1,26 +1,27 @@
-// pam_purpose.c - Hærdet udgave med bruger- og gruppelister
+// pam_purpose.c - Hardened version with user and group lists
+
 #include <security/pam_modules.h>
 #include <security/pam_ext.h>
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <syslog.h>
-#include <grp.h>      // Nødvendig for gruppeopslag
-#include <pwd.h>      // Nødvendig for at få brugerinformation
+#include <grp.h>      // Required for group lookups
+#include <pwd.h>      // Required to get user information
 
-// --- KONSTANTER ---
+// --- CONSTANTS ---
 #define PURPOSE_PROMPT "Enter purpose for login (Brief reason): "
 #define USERS_PREFIX "users="
 #define GROUPS_PREFIX "groups="
 
-// --- HJÆLPEFUNKTIONER ---
+// --- HELPER FUNCTIONS ---
 
-// Tjekker om brugeren er medlem af en af de specificerede grupper.
-// Returnerer 1 for ja, 0 for nej.
+// Checks if the user is a member of any of the specified groups.
+// Returns 1 for yes, 0 for no.
 int is_user_in_listed_groups(pam_handle_t *pamh, const char *user, const char *groups_list_str) {
     if (!user || !groups_list_str) return 0;
 
-    // Få brugerens gruppeinformation
+    // Get user's group information
     struct passwd *pw = getpwnam(user);
     if (!pw) {
         pam_syslog(pamh, LOG_ERR, "Could not find user '%s' for group lookup.", user);
@@ -28,7 +29,7 @@ int is_user_in_listed_groups(pam_handle_t *pamh, const char *user, const char *g
     }
 
     int ngroups = 0;
-    getgrouplist(user, pw->pw_gid, NULL, &ngroups); // Få antallet af grupper
+    getgrouplist(user, pw->pw_gid, NULL, &ngroups); // Get the number of groups
     gid_t *groups = malloc(sizeof(gid_t) * ngroups);
     if (!groups) {
         pam_syslog(pamh, LOG_CRIT, "CRIT: Failed to allocate memory for group list.");
@@ -36,7 +37,7 @@ int is_user_in_listed_groups(pam_handle_t *pamh, const char *user, const char *g
     }
     getgrouplist(user, pw->pw_gid, groups, &ngroups);
 
-    // Kopier gruppelisten for sikker brug af strtok()
+    // Copy the group list for safe use of strtok()
     char *list_copy = strdup(groups_list_str);
     if (!list_copy) {
         pam_syslog(pamh, LOG_CRIT, "CRIT: Failed to allocate memory for group list copy.");
@@ -65,13 +66,13 @@ int is_user_in_listed_groups(pam_handle_t *pamh, const char *user, const char *g
     return found;
 }
 
-// Tjekker om brugeren er på den specificerede brugerliste.
-// Returnerer 1 for ja, 0 for nej.
+// Checks if the user is on the specified user list.
+// Returns 1 for yes, 0 for no.
 int is_user_in_listed_users(const char *user, const char *users_list_str) {
     if (!user || !users_list_str) return 0;
 
     char *list_copy = strdup(users_list_str);
-    if (!list_copy) return 0; // Fejlhåndtering i kaldende funktion
+    if (!list_copy) return 0; // Error handling in the calling function
 
     char *token = strtok(list_copy, ",");
     int found = 0;
@@ -87,11 +88,14 @@ int is_user_in_listed_users(const char *user, const char *users_list_str) {
 }
 
 
-// --- HOVED FUNKTION: GODKENDELSE ---
+// --- MAIN FUNCTION: AUTHENTICATION ---
 PAM_EXTERN int
 pam_sm_authenticate(pam_handle_t *pamh, int flags,
                     int argc, const char **argv)
 {
+    // Mark unused parameters to prevent compiler errors with -Werror
+    (void)flags;
+
     const char *user = NULL;
     const char *users_list_str = NULL;
     const char *groups_list_str = NULL;
@@ -99,16 +103,16 @@ pam_sm_authenticate(pam_handle_t *pamh, int flags,
     int group_match = 0;
     char match_reason[64] = "not specified";
 
-    // Standard til at nægte adgang (Fail-Safe)
+    // Default to denying access (Fail-Safe)
     int pam_ret_val = PAM_AUTH_ERR;
 
-    // 1. Hent bruger
+    // 1. Get user
     if (pam_get_user(pamh, &user, NULL) != PAM_SUCCESS || !user) {
         pam_syslog(pamh, LOG_ERR, "CRIT: Could not retrieve PAM_USER. Denying.");
         return PAM_AUTH_ERR;
     }
 
-    // 2. Parse argumenter for bruger- og gruppelister
+    // 2. Parse arguments for user and group lists
     for (int i = 0; i < argc; i++) {
         if (strncmp(argv[i], USERS_PREFIX, strlen(USERS_PREFIX)) == 0) {
             users_list_str = argv[i] + strlen(USERS_PREFIX);
@@ -117,12 +121,12 @@ pam_sm_authenticate(pam_handle_t *pamh, int flags,
         }
     }
 
-    // Hvis ingen lister er angivet, gælder modulet ikke for nogen
+    // If no lists are provided, the module does not apply to anyone
     if (!users_list_str && !groups_list_str) {
         return PAM_SUCCESS;
     }
 
-    // 3. Tjek om brugeren matcher en af listerne
+    // 3. Check if the user matches any of the lists
     if (users_list_str && is_user_in_listed_users(user, users_list_str)) {
         user_match = 1;
     }
@@ -130,12 +134,12 @@ pam_sm_authenticate(pam_handle_t *pamh, int flags,
         group_match = 1;
     }
 
-    // Hvis brugeren ikke matcher nogen af listerne, spring over
+    // If the user matches neither list, skip
     if (!user_match && !group_match) {
         return PAM_SUCCESS;
     }
 
-    // Opbyg årsag til logning
+    // Build reason for logging
     if (user_match && group_match) {
         snprintf(match_reason, sizeof(match_reason), "user and group lists");
     } else if (user_match) {
@@ -144,7 +148,7 @@ pam_sm_authenticate(pam_handle_t *pamh, int flags,
         snprintf(match_reason, sizeof(match_reason), "groups list");
     }
 
-    // 4. Detekter Non-Interaktiv Session
+    // 4. Detect Non-Interactive Session
     const char *tty_name = NULL;
     pam_get_item(pamh, PAM_TTY, (const void **)&tty_name);
     
@@ -153,7 +157,7 @@ pam_sm_authenticate(pam_handle_t *pamh, int flags,
         return PAM_SUCCESS;
     }
 
-    // 5. Interaktiv Prompt
+    // 5. Interactive Prompt
     char *purpose_response = NULL;
     int retval = pam_prompt(pamh, PAM_PROMPT_ECHO_ON, &purpose_response, PURPOSE_PROMPT);
 
@@ -172,7 +176,20 @@ pam_sm_authenticate(pam_handle_t *pamh, int flags,
 }
 
 // --- PAM STUBS ---
-PAM_EXTERN int pam_sm_setcred(pam_handle_t *pamh, int flags, int argc, const char **argv) { return PAM_SUCCESS; }
-PAM_EXTERN int pam_sm_acct_mgmt(pam_handle_t *pamh, int flags, int argc, const char **argv) { return PAM_SUCCESS; }
-PAM_EXTERN int pam_sm_open_session(pam_handle_t *pamh, int flags, int argc, const char **argv) { return PAM_SUCCESS; }
-PAM_EXTERN int pam_sm_close_session(pam_handle_t *pamh, int flags, int argc, const char **argv) { return PAM_SUCCESS; }
+PAM_EXTERN int pam_sm_setcred(pam_handle_t *pamh, int flags, int argc, const char **argv) {
+    (void)pamh; (void)flags; (void)argc; (void)argv;
+    return PAM_SUCCESS;
+}
+PAM_EXTERN int pam_sm_acct_mgmt(pam_handle_t *pamh, int flags, int argc, const char **argv) {
+    (void)pamh; (void)flags; (void)argc; (void)argv;
+    return PAM_SUCCESS;
+}
+PAM_EXTERN int pam_sm_open_session(pam_handle_t *pamh, int flags, int argc, const char **argv) {
+    (void)pamh; (void)flags; (void)argc; (void)argv;
+    return PAM_SUCCESS;
+}
+PAM_EXTERN int pam_sm_close_session(pam_handle_t *pamh, int flags, int argc, const char **argv) {
+    (void)pamh; (void)flags; (void)argc; (void)argv;
+    return PAM_SUCCESS;
+}
+
