@@ -6,7 +6,7 @@ GZIP = gzip
 
 # Directories (relative to this Makefile)
 SRC_DIR = .
-BUILD_DIR = ../../build
+BUILD_DIR = build
 
 # Source and target files
 MAN_SRC_MD = $(SRC_DIR)/pam_purpose.8.md
@@ -39,6 +39,7 @@ install: all
 clean:
 	@echo "Cleaning up doc build artifacts..."
 	@rm -f $(MAN_TARGET_GROFF) $(MAN_TARGET_GZ)
+	@rmdir $(BUILD_DIR)
 
 .PHONY: all install clean
 

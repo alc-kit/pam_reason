@@ -1,4 +1,5 @@
 src/c/build**
+src/doc/build**
 src/rs/target**
 src/rs/Cargo.lock
 build/**
