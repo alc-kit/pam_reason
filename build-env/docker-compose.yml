@@ -4,19 +4,19 @@ services:
   # Service for Debian/Ubuntu based builds
   build-env-debian:
     build:
-      context: ubuntu-24-04
+      context: ./docker
       dockerfile: Dockerfile
     volumes:
-      - ../src/c:/usr/src/app:Z
+      - ../..:/usr/src/app:Z
     tty: true
     stdin_open: true
 
   # Service for Red Hat based builds (AlmaLinux, Rocky, Fedora)
   build-env-rhel:
     build:
-      context: RHEL
+      context: ./podman
       dockerfile: Containerfile
     volumes:
-      - ./src/c:/usr/src/app:Z
+      - ../..:/usr/src/app:Z
     tty: true
     stdin_open: true

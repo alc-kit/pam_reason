@@ -1,0 +1,18 @@
+# Use AlmaLinux 9 as the base image (RHEL 9 compatible)
+FROM almalinux:9
+
+# Install C, Rust, and RPM packaging dependencies using distribution packages
+RUN dnf install -y epel-release && \
+    dnf install -y \
+        # C toolchain
+        gcc make glibc-devel pam-devel gzip pandoc \
+        # Rust toolchain from AlmaLinux's repository
+        rust cargo \
+        # RPM Packaging
+        rpm-build \
+    && dnf clean all
+
+# Set the working directory inside the container.
+# This is where your source code will be mounted.
+WORKDIR /usr/src/app
+

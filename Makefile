@@ -6,7 +6,7 @@ C_TARGET = $(BUILD_DIR)/pam_purpose_c.so
 RUST_TARGET = $(BUILD_DIR)/pam_purpose_rs.so
 MAN_TARGET = $(BUILD_DIR)/pam_purpose.8.gz
 
-.PHONY: all c rust doc clean install-c install-rust
+.PHONY: all c rust doc clean package-deb package-rpm
 
 # Default target: build everything
 all: c rust doc
@@ -41,18 +41,31 @@ clean:
 	@(cd src/rs && cargo clean)
 	@rm -rf $(BUILD_DIR)
 
-# Installation targets
-install-c: c doc
-	@$(MAKE) -C src/c install
+# --- Packaging Targets ---
 
-install-rust: rust doc
-	@echo "Installing Rust module..."
-	@if [ -d /lib/x86_64-linux-gnu/ ]; then \
-		sudo install -m 644 $(RUST_TARGET) /lib/x86_64-linux-gnu/security/pam_purpose.so; \
-	else \
-		sudo install -m 644 $(RUST_TARGET) /lib64/security/pam_purpose.so; \
-	fi
-	@echo "Installing man page..."
-	@sudo install -m 644 $(MAN_TARGET) /usr/share/man/man8/
-	@sudo mandb
+# Build Debian packages for both C and Rust versions
+package-deb: c rust doc
+	@echo "--- Building Debian Packages ---"
+	# Create a temporary directory for packaging
+	@rm -rf $(BUILD_DIR)/deb_temp
+	@mkdir -p $(BUILD_DIR)/deb_temp
+	# Copy source and packaging files
+	@cp -r src $(BUILD_DIR)/deb_temp/
+	@cp -r packaging/debian $(BUILD_DIR)/deb_temp/
+	# Build C package inside the container
+	@docker compose run --rm build-env-debian /bin/bash -c "cd /usr/src/app/build/deb_temp && dpkg-buildpackage -us -uc -b -Ppam-purpose-c"
+	# Build Rust package inside the container
+	@docker compose run --rm build-env-debian /bin/bash -c "cd /usr/src/app/build/deb_temp && dpkg-buildpackage -us -uc -b -Ppam-purpose-rs"
+	@echo "Debian packages are available in $(BUILD_DIR)/"
+	@mv $(BUILD_DIR)/deb_temp/*.deb $(BUILD_DIR)/
+
+
+# Build RPM packages for both C and Rust versions
+package-rpm: c rust doc
+	@echo "--- Building RPM Packages ---"
+	# Build C package
+	@docker compose run --rm build-env-rhel /bin/bash -c "rpmbuild -bb --define '_sourcedir /usr/src/app' --define '_specdir /usr/src/app/packaging/rpm' --define '_builddir /usr/src/app/build' --define '_rpmdir /usr/src/app/build' --define 'build_c 1' packaging/rpm/pam_purpose.spec"
+	# Build Rust package
+	@docker compose run --rm build-env-rhel /bin/bash -c "rpmbuild -bb --define '_sourcedir /usr/src/app' --define '_specdir /usr/src/app/packaging/rpm' --define '_builddir /usr/src/app/build' --define '_rpmdir /usr/src/app/build' --define 'build_rust 1' packaging/rpm/pam_purpose.spec"
+	@echo "RPM packages are available in $(BUILD_DIR)/x86_64/"
 
