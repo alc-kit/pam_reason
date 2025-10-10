@@ -11,7 +11,7 @@ LDLIBS = -lpam
 
 # Source and build directories
 SRC_DIR = src
-BUILD_DIR = ../../build/c
+BUILD_DIR = build
 
 # Source files
 C_SRC = $(SRC_DIR)/pam_purpose.c

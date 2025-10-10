@@ -1,0 +1,132 @@
+#!/usr/bin/env python3
+#
+# check_pam_purpose.py - A diagnostic tool to debug why a user is being
+# prompted by the pam_purpose.so module.
+#
+# This script is read-only and does not modify any system configuration.
+# It simulates the decision-making process of the C module.
+#
+# Usage: sudo ./check_pam_purpose.py <username>
+#
+import sys
+import re
+import pwd
+import grp
+
+# --- Configuration ---
+PAM_SERVICE_FILE = '/etc/pam.d/sshd'
+MODULE_NAME = 'pam_purpose.so'
+USERS_PARAM = 'users'
+GROUPS_PARAM = 'groups'
+
+# --- ANSI Colors for output ---
+class Colors:
+    GREEN = '\033[92m'
+    RED = '\033[91m'
+    YELLOW = '\033[93m'
+    BLUE = '\033[94m'
+    ENDC = '\033[0m'
+
+def get_user_groups(username: str) -> set:
+    """Returns a set of all group names the user belongs to."""
+    try:
+        gid = pwd.getpwnam(username).pw_gid
+        user_groups = {grp.getgrgid(gid).gr_name}
+        all_groups = grp.getgrall()
+        for group in all_groups:
+            if username in group.gr_mem:
+                user_groups.add(group.gr_name)
+        return user_groups
+    except KeyError:
+        return set()
+
+def parse_pam_config_line(line: str) -> dict:
+    """Parses a PAM config line to extract users and groups arguments."""
+    params = {
+        'users': [],
+        'groups': []
+    }
+    # Use regex to find `key=value` pairs
+    user_match = re.search(r'users=([\w,-]+)', line)
+    group_match = re.search(r'groups=([\w,-]+)', line)
+
+    if user_match:
+        params['users'] = user_match.group(1).split(',')
+    if group_match:
+        params['groups'] = group_match.group(1).split(',')
+
+    return params
+
+def main():
+    if len(sys.argv) != 2:
+        print(f"Usage: sudo {sys.argv[0]} <username>", file=sys.stderr)
+        sys.exit(1)
+
+    username = sys.argv[1]
+
+    print(f"{Colors.BLUE}--- PAM Purpose Debugger ---{Colors.ENDC}")
+    print(f"Analyzing configuration for user: {Colors.YELLOW}{username}{Colors.ENDC}\n")
+
+    try:
+        user_groups = get_user_groups(username)
+        if not user_groups:
+            print(f"{Colors.RED}Error: User '{username}' not found on this system.{Colors.ENDC}")
+            sys.exit(1)
+        
+        print(f"User '{username}' is a member of the following groups:")
+        print(f"  {', '.join(sorted(list(user_groups)))}\n")
+
+    except Exception as e:
+        print(f"{Colors.RED}An error occurred fetching user groups: {e}{Colors.ENDC}")
+        sys.exit(1)
+
+    config_found = False
+    try:
+        with open(PAM_SERVICE_FILE, 'r') as f:
+            for line in f:
+                if MODULE_NAME in line and not line.strip().startswith('#'):
+                    config_found = True
+                    print(f"Found active configuration line in {Colors.YELLOW}{PAM_SERVICE_FILE}{Colors.ENDC}:")
+                    print(f"  {line.strip()}\n")
+                    
+                    params = parse_pam_config_line(line)
+                    config_users = set(params.get('users', []))
+                    config_groups = set(params.get('groups', []))
+
+                    print("Parsed configuration:")
+                    print(f"  - Users to prompt: {', '.join(config_users) if config_users else 'None'}")
+                    print(f"  - Groups to prompt: {', '.join(config_groups) if config_groups else 'None'}\n")
+
+                    # --- Decision Logic ---
+                    user_match = username in config_users
+                    group_match = not user_groups.isdisjoint(config_groups) # Check for any overlap
+
+                    print(f"{Colors.BLUE}--- Analysis ---{Colors.ENDC}")
+                    if user_match:
+                        print(f"{Colors.GREEN}[MATCH]{Colors.ENDC} User '{username}' is explicitly listed in the 'users' parameter.")
+                    if group_match:
+                        matching_groups = user_groups.intersection(config_groups)
+                        print(f"{Colors.GREEN}[MATCH]{Colors.ENDC} User '{username}' is a member of a required group: {', '.join(matching_groups)}")
+
+                    print("\n" + "="*20)
+                    if user_match or group_match:
+                        print(f"{Colors.RED}DECISION: User '{username}' WILL BE PROMPTED for a purpose.{Colors.ENDC}")
+                    else:
+                        print(f"{Colors.GREEN}DECISION: User '{username}' WILL NOT be prompted for a purpose.{Colors.ENDC}")
+                    print("="*20)
+                    break
+        
+        if not config_found:
+            print(f"{Colors.YELLOW}No active configuration for '{MODULE_NAME}' found in {PAM_SERVICE_FILE}.{Colors.ENDC}")
+            print(f"\n{Colors.GREEN}DECISION: User '{username}' WILL NOT be prompted.{Colors.ENDC}")
+
+    except FileNotFoundError:
+        print(f"{Colors.RED}Error: PAM service file not found at {PAM_SERVICE_FILE}{Colors.ENDC}")
+        sys.exit(1)
+    except Exception as e:
+        print(f"{Colors.RED}An unexpected error occurred: {e}{Colors.ENDC}")
+        sys.exit(1)
+
+
+if __name__ == '__main__':
+    main()
