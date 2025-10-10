@@ -1,7 +1,7 @@
 Source: pam-purpose
 Section: admin
 Priority: optional
-Maintainer: Your Name <your.email@example.com>
+Maintainer: Allan Christoffersen <alc@kvalitetsit.dk>
 Build-Depends: debhelper-compat (= 13), gcc, make, libpam0g-dev, pandoc, gzip
 Standards-Version: 4.5.0
 

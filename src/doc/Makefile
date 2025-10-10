@@ -7,7 +7,7 @@ GZIP = gzip
 
 # Directories (relative to this Makefile)
 SRC_DIR = .
-BUILD_DIR = ../../build/doc
+BUILD_DIR = ../../build
 
 # Source and target files
 MAN_SRC_MD = $(SRC_DIR)/pam_purpose.8.md

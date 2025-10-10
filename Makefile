@@ -2,7 +2,7 @@
 
 # Build directory for final artifacts
 BUILD_DIR = build
-C_TARGET = $(BUILD_DIR)/pam_purpose_c.so
+C_TARGET = $(BUILD_DIR)/pam_purpose.so
 RUST_TARGET = $(BUILD_DIR)/pam_purpose_rs.so
 MAN_TARGET = $(BUILD_DIR)/pam_purpose.8.gz
 
@@ -38,9 +38,16 @@ doc:
 clean:
 	@echo "--- Cleaning all projects ---"
 	@$(MAKE) -C src/c clean
-	@$(MAKE) -c src/doc clean
-	@(cd src/rs && cargo clean)
+	@$(MAKE) -C src/doc clean
+	@$(MAKE) -C src/rs clean
 	@rm -rf $(BUILD_DIR)
+
+# Target to install all built components (for packaging)
+install: all
+	@echo "--- Installing all components for packaging ---"
+	@$(MAKE) -C src/c install DESTDIR=$(DESTDIR)
+	@$(MAKE) -C src/rs install DESTDIR=$(DESTDIR)
+	@$(MAKE) -C src/doc install DESTDIR=$(DESTDIR)
 
 # --- Packaging Targets ---
 

@@ -1,0 +1,12 @@
+Source: pam-purpose-tool
+Section: admin
+Priority: optional
+Maintainer: Allan Christoffersen <alc@kvalitetsit.dk>
+Build-Depends: debhelper-compat (= 13)
+
+Package: pam-purpose-tool
+Architecture: all
+Depends: libpam-purpose, ${misc:Depends}
+Description: Diagnostic tool for the pam_purpose module.
+ This package provides a script to debug and analyze the configuration
+ of the pam_purpose.so module for specific users.

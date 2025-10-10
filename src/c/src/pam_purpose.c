@@ -165,7 +165,7 @@ pam_sm_authenticate(pam_handle_t *pamh, int flags,
         pam_syslog(pamh, LOG_INFO, "USER=%s ACTION=LOGIN_SUCCESS Purpose='%s' (matched %s)", user, purpose_response, match_reason);
         pam_ret_val = PAM_SUCCESS;
     } else {
-        pam_syslog(pamh, LOG_ERR, "USER=%s ACTION=LOGIN_DENIED REASON='Prompt failed or empty purpose' (matched %s)", user, match_reason);
+        pam_syslog(pamh, LOG_ERR, "USER=%s ACTION=LOGIN_DENIED REASON='Prompt failed (retval=%i) or empty purpose' (matched %s)", user, retval, match_reason);
     }
 
     if (purpose_response) {
