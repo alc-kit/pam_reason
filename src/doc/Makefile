@@ -39,7 +39,7 @@ install: all
 clean:
 	@echo "Cleaning up doc build artifacts..."
 	@rm -f $(MAN_TARGET_GROFF) $(MAN_TARGET_GZ)
-	@rmdir $(BUILD_DIR)
+	@-rmdir $(BUILD_DIR)
 
 .PHONY: all install clean
 

@@ -6,7 +6,7 @@ C_TARGET = $(BUILD_DIR)/pam_purpose.so
 RUST_TARGET = $(BUILD_DIR)/pam_purpose_rs.so
 MAN_TARGET = $(BUILD_DIR)/pam_purpose.8.gz
 
-.PHONY: all c rust doc clean package-deb package-rpm build/check_pam_purpose
+.PHONY: all c rust doc clean package-deb package-rpm check_pam_purpose
 
 NAME := pam-purpose
 VERSION := 0.1.0
@@ -43,7 +43,7 @@ clean:
 	@$(MAKE) -C src/c clean
 	@$(MAKE) -C src/doc clean
 	@$(MAKE) -C src/rs clean
-	@rm -rf $(BUILD_DIR)
+	@-rm -rf $(BUILD_DIR)
 
 # Target to install all built components (for packaging)
 install: all
@@ -53,7 +53,7 @@ install: all
 	@$(MAKE) -C src/doc install DESTDIR=$(DESTDIR)
 
 
-build/check_pam_purpose:
+check_pam_purpose:
 	@echo "--- Making debugging tool ---"
 	@mkdir -p $(BUILD_DIR)
 	@cp test/check_pam_purpose build/check_pam_purpose
