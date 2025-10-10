@@ -1,14 +1,19 @@
+# spec file for pam-purpose-tool RPM package
+
+%define _name pam-purpose
+%define version 0.1.0
+%define release 1
+# Disable the automatic generation of a debug package
+%define debug_package %{nil}
+
 Name:           pam-purpose-tool
 Version:        0.1.0
 Release:        1%{?dist}
 Summary:        Diagnostic tool for the pam_purpose module
 
-# Disable the automatic generation of a debug package
-%define debug_package %{nil}
-
 License:        GPLv3
 URL:            https://github.com/alc-kit/pam_purpose
-Source0:        test/check_pam_purpose
+Source0:        %{_name}-%{version}.tar.gz
 
 BuildArch:      noarch
 Requires:       pam-purpose = %{version}-%{release}
@@ -16,6 +21,9 @@ Requires:       pam-purpose = %{version}-%{release}
 %description
 This package provides a script to debug and analyze the configuration
 of the pam_purpose.so module for specific users.
+
+%prep
+%setup -q
 
 %install
 make check_pam_purpose

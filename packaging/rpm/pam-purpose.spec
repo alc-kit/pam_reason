@@ -10,7 +10,7 @@ Name:      %{_name}
 Version:   %{version}
 Release:   %{release}%{?dist}
 Summary:   PAM module to require and audit a login purpose
-License:   MIT
+License:   GPLv3
 URL:       https://github.com/alc-kit/pam_purpose
 Source0:   %{name}-%{version}.tar.gz
 
@@ -30,7 +30,7 @@ logins to sensitive systems are justified.
 %setup -q
 
 %build
-# Build both the C and Rust modules
+# Build the C module
 %make_build
 
 %install
