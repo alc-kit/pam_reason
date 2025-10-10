@@ -1,4 +1,3 @@
-/src/doc/Makefile:
 # Makefile for the man page
 
 # Tools

@@ -9,7 +9,7 @@ MAN_TARGET = $(BUILD_DIR)/pam_purpose.8.gz
 .PHONY: all c rust doc clean package-deb package-rpm
 
 # Default target: build everything
-all: c rust doc
+all: c doc
 
 # Build the C version
 c:
@@ -52,7 +52,7 @@ install: all
 # --- Packaging Targets ---
 
 # Build Debian packages for both C and Rust versions
-package-deb: c rust doc
+package-deb: c doc
 	@echo "--- Building Debian Packages ---"
 	# Create a temporary directory for packaging
 	@rm -rf $(BUILD_DIR)/deb_temp
@@ -61,7 +61,7 @@ package-deb: c rust doc
 	@cp -r src $(BUILD_DIR)/deb_temp/
 	@cp -r packaging/debian $(BUILD_DIR)/deb_temp/
 	# Build C package inside the container
-	@docker compose run --rm build-env-debian /bin/bash -c "cd /usr/src/app/build/deb_temp && dpkg-buildpackage -us -uc -b -Ppam-purpose-c"
+	@dpkg-buildpackage -us -uc -b -Ppam-purpose
 	# Build Rust package inside the container
 	#@docker compose run --rm build-env-debian /bin/bash -c "cd /usr/src/app/build/deb_temp && dpkg-buildpackage -us -uc -b -Ppam-purpose-rs"
 	@echo "Debian packages are available in $(BUILD_DIR)/"
@@ -69,10 +69,10 @@ package-deb: c rust doc
 
 
 # Build RPM packages for both C and Rust versions
-package-rpm: c rust doc
+package-rpm: c doc
 	@echo "--- Building RPM Packages ---"
 	# Build C package
-	@docker compose run --rm build-env-rhel /bin/bash -c "rpmbuild -bb --define '_sourcedir /usr/src/app' --define '_specdir /usr/src/app/packaging/rpm' --define '_builddir /usr/src/app/build' --define '_rpmdir /usr/src/app/build' --define 'build_c 1' packaging/rpm/pam_purpose.spec"
+	@rpmbuild -bb --define '_sourcedir /usr/src/app' --define '_specdir /usr/src/app/packaging/rpm' --define '_builddir /usr/src/app/build' --define '_rpmdir /usr/src/app/build' --define 'build_c 1' packaging/rpm/pam-purpose.spec
 	# Build Rust package
 	#@docker compose run --rm build-env-rhel /bin/bash -c "rpmbuild -bb --define '_sourcedir /usr/src/app' --define '_specdir /usr/src/app/packaging/rpm' --define '_builddir /usr/src/app/build' --define '_rpmdir /usr/src/app/build' --define 'build_rust 1' packaging/rpm/pam_purpose.spec"
 	@echo "RPM packages are available in $(BUILD_DIR)/x86_64/"
