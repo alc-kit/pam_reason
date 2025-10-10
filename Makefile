@@ -79,14 +79,12 @@ package-rpm:
 	@# Use git archive for a clean, reproducible source tarball
 	@git archive --format=tgz --prefix=$(NAME)-$(VERSION)/ -o build/$(NAME)-$(VERSION).tar.gz HEAD
 	@echo "Running rpmbuild in container..."
-	@# The -ta flag tells rpmbuild to build from a tarball archive.
-	@docker compose run --rm build-env-rhel rpmbuild -ta /usr/src/app/build/$(NAME)-$(VERSION).tar.gz
-
-#package-rpm: c doc
-#	@echo "--- Building RPM Packages ---"
-#	# Build C package
-#	@rpmbuild -bb --define '_sourcedir /usr/src/app' --define '_specdir /usr/src/app/packaging/rpm' --define '_builddir /usr/src/app/build' --define '_rpmdir /usr/src/app/build' --define 'build_c 1' packaging/rpm/pam-purpose.spec
-#	# Build Rust package
-#	#@docker compose run --rm build-env-rhel /bin/bash -c "rpmbuild -bb --define '_sourcedir /usr/src/app' --define '_specdir /usr/src/app/packaging/rpm' --define '_builddir /usr/src/app/build' --define '_rpmdir /usr/src/app/build' --define 'build_rust 1' packaging/rpm/pam_purpose.spec"
-#	@echo "RPM packages are available in $(BUILD_DIR)/x86_64/"
+	@# Use -bb (build binary) and explicitly point to the correct .spec file.
+	@# --define "_sourcedir ..." tells rpmbuild where to find the tarball.
+	@docker compose -f build-env/docker-compose.yml run --rm build-env-rhel rpmbuild -bb \
+		--define "_sourcedir /usr/src/app/build" \
+		/usr/src/app/packaging/rpm/pam-purpose.spec
+	@docker compose -f build-env/docker-compose.yml run --rm build-env-rhel rpmbuild -bb \
+		--define "_sourcedir /usr/src/app/build" \
+		/usr/src/app/packaging/rpm/pam-purpose-tool.spec
 
