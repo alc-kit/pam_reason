@@ -9,7 +9,7 @@ Version:   %{version}
 Release:   %{release}%{?dist}
 Summary:   PAM module to require and audit a login purpose
 License:   MIT
-URL:       https://github.com/your-repo/pam-purpose
+URL:       https://github.com/alc-kit/pam_purpose
 Source0:   %{name}-%{version}.tar.gz
 
 BuildRequires: gcc
