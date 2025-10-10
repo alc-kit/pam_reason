@@ -4,8 +4,13 @@ FROM almalinux:9
 # Install all necessary build dependencies using dnf
 # - 'Development Tools' group: Provides gcc, make, etc.
 # - pam-devel: Crucial for PAM C headers and development libraries.
-RUN dnf groupinstall -y "Development Tools" && \
-    dnf install -y pam-devel && \
+RUN dnf install -y epel-release && \
+    dnf install -y gcc \
+        make \
+        glibc-devel \
+        pam-devel \
+        gzip \
+        pandoc && \
     dnf clean all
 
 # Set the working directory inside the container.

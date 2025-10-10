@@ -1,2 +1,3 @@
-**/c/build**
-**/Rust/target**
+src/c/build**
+src/rs/target**
+src/rs/Cargo.lock
