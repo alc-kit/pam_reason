@@ -1,0 +1,16 @@
+#!/usr/bin/make -f
+
+# See debhelper(7) for details.
+# This is a simple rules file that uses the dh sequencer.
+
+%:
+	dh $@
+
+override_dh_auto_build:
+	# Build both C and Rust versions
+	$(MAKE) all
+
+override_dh_auto_install:
+	# Install both versions into the debian/libpam-purpose directory
+	$(MAKE) DESTDIR=debian/libpam-purpose install
+

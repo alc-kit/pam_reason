@@ -1,0 +1,21 @@
+Source: pam-purpose
+Section: admin
+Priority: optional
+Maintainer: Your Name <your.email@example.com>
+Build-Depends: debhelper-compat (= 13), gcc, make, libpam0g-dev, pandoc, gzip
+Standards-Version: 4.5.0
+
+Package: libpam-purpose
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Description: PAM module to require and audit a login purpose
+ This PAM module prompts interactive users for a written purpose for their
+ login session, which is then audited via syslog.
+ .
+ It is designed to enhance security and accountability by ensuring that
+ logins to sensitive systems are justified. The module can be configured
+ to apply only to specific users or groups. Non-interactive sessions
+ (e.g., Ansible, SCP) are automatically permitted to avoid breaking
+ automation.
+
+

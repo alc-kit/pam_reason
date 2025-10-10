@@ -7,7 +7,7 @@ services:
       context: ./docker
       dockerfile: Dockerfile
     volumes:
-      - ../..:/usr/src/app:Z
+      - ../:/usr/src/app:Z
     tty: true
     stdin_open: true
 
@@ -17,6 +17,6 @@ services:
       context: ./podman
       dockerfile: Containerfile
     volumes:
-      - ../..:/usr/src/app:Z
+      - ../:/usr/src/app:Z
     tty: true
     stdin_open: true
