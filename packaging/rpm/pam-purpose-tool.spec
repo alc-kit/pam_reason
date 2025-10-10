@@ -3,6 +3,9 @@ Version:        0.1.0
 Release:        1%{?dist}
 Summary:        Diagnostic tool for the pam_purpose module
 
+# Disable the automatic generation of a debug package
+%define debug_package %{nil}
+
 License:        GPLv3
 URL:            https://github.com/alc-kit/pam_purpose
 Source0:        test/check_pam_purpose
@@ -16,7 +19,7 @@ of the pam_purpose.so module for specific users.
 
 %install
 mkdir -p %{buildroot}/usr/sbin
-install -m 755 %{SOURCE0} %{buildroot}/usr/sbin/check_pam_purpose.py
+install -m 755 %{SOURCE0} %{buildroot}/usr/sbin/check_pam_purpose
 
 %files
 /usr/sbin/check_pam_purpose

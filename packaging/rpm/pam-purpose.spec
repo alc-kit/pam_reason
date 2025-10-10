@@ -3,6 +3,8 @@
 %define _name pam-purpose
 %define version 0.1.0
 %define release 1
+# Disable the automatic generation of a debug package
+%define debug_package %{nil}
 
 Name:      %{_name}
 Version:   %{version}
