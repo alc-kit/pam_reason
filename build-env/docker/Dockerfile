@@ -10,12 +10,21 @@ ENV DEBIAN_FRONTEND=noninteractive
 # - man-db:         Provides 'mandb' for managing man pages.
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-        # C toolchain
-        gcc make libc6-dev libpam-dev gzip pandoc \
-        # Rust toolchain from Ubuntu's repository
-        rustc cargo \
-        # Debian Packaging
-        debhelper devscripts \
+        build-essential \
+        # Specific C tools (already covered by build-essential, but explicit)
+        gcc \
+        make \
+        # PAM development headers
+        libc6-dev \
+        libpam-dev \
+        # Man page tools
+        gzip \
+        pandoc \
+        # Debian packaging tools
+        debhelper \
+        devscripts \
+        # Auditd development headers (if using auditd logging)
+        libaudit-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Set the working directory inside the container.

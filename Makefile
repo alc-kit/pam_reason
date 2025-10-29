@@ -69,12 +69,13 @@ package-deb: c doc
 	# Copy source and packaging files
 	@cp -r src $(BUILD_DIR)/deb_temp/
 	@cp -r packaging/debian $(BUILD_DIR)/deb_temp/
+	@cp packaging/debian/Makefile $(BUILD_DIR)/deb_temp/
 	# Build C package inside the container
-	@dpkg-buildpackage -us -uc -b -Ppam-purpose
+	@$(MAKE) -C $(BUILD_DIR)/deb_temp $@
 	# Build Rust package inside the container
-	#@docker compose run --rm build-env-debian /bin/bash -c "cd /usr/src/app/build/deb_temp && dpkg-buildpackage -us -uc -b -Ppam-purpose-rs"
+	# docker compose run --rm build-env-debian /bin/bash -c "cd /usr/src/app/build/deb_temp && dpkg-buildpackage -us -uc -b -Ppam-purpose-rs"
 	@echo "Debian packages are available in $(BUILD_DIR)/"
-	@mv $(BUILD_DIR)/deb_temp/*.deb $(BUILD_DIR)/
+	# @mv $(BUILD_DIR)/deb_temp/*.deb $(BUILD_DIR)/
 
 
 # Build RPM packages for both C and Rust versions

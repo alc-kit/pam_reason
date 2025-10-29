@@ -7,7 +7,7 @@ CFLAGS = -fPIC -Wall -Wextra -Werror -fstack-protector-strong -D_FORTIFY_SOURCE=
 
 # Linker and flags
 LDFLAGS = -shared -Wl,-z,relro -Wl,-z,now
-LDLIBS = -lpam
+LDLIBS = -lpam -laudit
 
 # Source and build directories
 SRC_DIR = src

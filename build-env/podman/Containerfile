@@ -5,7 +5,7 @@ FROM almalinux:9
 RUN dnf install -y epel-release && \
     dnf install -y \
         # C toolchain
-        gcc make glibc-devel pam-devel gzip pandoc \
+        gcc make glibc-devel pam-devel audit-libs-devel gzip pandoc \
         # Rust toolchain from AlmaLinux's repository
         rust cargo \
         # RPM Packaging
