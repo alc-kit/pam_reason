@@ -1,4 +1,4 @@
-// pam_purpose.c - Hardened version with user and group lists
+// pam_purpose.c - Hardened version with DUAL (syslog + auditd) logging
 
 #include <security/pam_modules.h>
 #include <security/pam_ext.h>
@@ -6,13 +6,17 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <syslog.h>
-#include <grp.h>      // Required for group lookups
-#include <pwd.h>      // Required to get user information
+#include <grp.h>      // Needed for group lookups
+#include <pwd.h>      // Needed for user information
+#include <libaudit.h> // Added for auditd
+#include <errno.h>    // Added for auditd error checking
 
 // --- CONSTANTS ---
 #define PURPOSE_PROMPT "Enter purpose for login (Brief reason): "
 #define USERS_PREFIX "users="
 #define GROUPS_PREFIX "groups="
+#define MAX_PURPOSE_LENGTH 500 // Max length for user-provided purpose
+#define MAX_REASON_LENGTH 128  // Buffer for logging the match reason
 
 // --- HELPER FUNCTIONS ---
 
@@ -37,7 +41,7 @@ int is_user_in_listed_groups(pam_handle_t *pamh, const char *user, const char *g
     }
     getgrouplist(user, pw->pw_gid, groups, &ngroups);
 
-    // Copy the group list for safe use of strtok()
+    // Copy the group list for safe use with strtok()
     char *list_copy = strdup(groups_list_str);
     if (!list_copy) {
         pam_syslog(pamh, LOG_CRIT, "CRIT: Failed to allocate memory for group list copy.");
@@ -72,7 +76,7 @@ int is_user_in_listed_users(const char *user, const char *users_list_str) {
     if (!user || !users_list_str) return 0;
 
     char *list_copy = strdup(users_list_str);
-    if (!list_copy) return 0; // Error handling in the calling function
+    if (!list_copy) return 0; // Error handling in calling function
 
     char *token = strtok(list_copy, ",");
     int found = 0;
@@ -87,13 +91,55 @@ int is_user_in_listed_users(const char *user, const char *users_list_str) {
     return found;
 }
 
+// --- NEW HELPER FUNCTION: DUAL LOGGING (AUDITD + SYSLOG) ---
+static void log_pam_event(pam_handle_t *pamh, const char *user, const char *action, 
+                          const char *purpose, const char *match_reason, int success, int pam_retval)
+{
+    int au_fd = -1;
+    char msg_buf[1024];
+    const char *tty_name = NULL;
+    const char *rhost = NULL;
+
+    // 1. Get additional context from PAM
+    pam_get_item(pamh, PAM_TTY, (const void **)&tty_name);
+    pam_get_item(pamh, PAM_RHOST, (const void **)&rhost);
+
+    // 2. Build the structured message payload
+    snprintf(msg_buf, sizeof(msg_buf),
+             "op=pam_purpose action=%s user=%s purpose=\"%s\" match_reason=\"%s\" pam_retval=%d",
+             action,
+             user ? user : "unknown",
+             purpose ? purpose : "none",
+             match_reason ? match_reason : "none",
+             pam_retval);
+
+    // --- 3. Log to auditd (The primary audit log) ---
+    au_fd = audit_open();
+    if (au_fd < 0) {
+        // If we can't open auditd, log this error *to syslog*
+        pam_syslog(pamh, LOG_CRIT, "CRIT: Failed to open auditd connection (errno=%d). PAM_PURPOSE FAILED.", errno);
+    } else {
+        if (audit_log_user_message(au_fd, AUDIT_USER_AUTH, msg_buf,
+                                   rhost, NULL, tty_name, success) <= 0) {
+            // If writing to auditd fails, log this error *to syslog*
+            pam_syslog(pamh, LOG_ERR, "Failed to write to auditd. Message was: %s", msg_buf);
+        }
+        audit_close(au_fd);
+    }
+
+    // --- 4. Log to syslog (The operational/debug log) ---
+    // We log to syslog regardless, so administrators can see it in journalctl -f
+    int log_level = (success == 1) ? LOG_INFO : LOG_ERR;
+    pam_syslog(pamh, log_level, "%s", msg_buf);
+}
+
 
 // --- MAIN FUNCTION: AUTHENTICATION ---
 PAM_EXTERN int
 pam_sm_authenticate(pam_handle_t *pamh, int flags,
                     int argc, const char **argv)
 {
-    // Mark unused parameters to prevent compiler errors with -Werror
+    // Explicitly mark 'flags' as unused to prevent compiler errors with -Werror
     (void)flags;
 
     const char *user = NULL;
@@ -101,13 +147,14 @@ pam_sm_authenticate(pam_handle_t *pamh, int flags,
     const char *groups_list_str = NULL;
     int user_match = 0;
     int group_match = 0;
-    char match_reason[64] = "not specified";
-
+    // Use the new, larger constant for match_reason buffer
+    char match_reason[MAX_REASON_LENGTH] = "not specified";
     // Default to denying access (Fail-Safe)
-    int pam_ret_val = PAM_AUTH_ERR;
+    int pam_ret_val = PAM_AUTH_ERR; 
+    int retval; // To store return values from PAM calls
 
     // 1. Get user
-    if (pam_get_user(pamh, &user, NULL) != PAM_SUCCESS || !user) {
+    if ((retval = pam_get_user(pamh, &user, NULL)) != PAM_SUCCESS || !user) {
         pam_syslog(pamh, LOG_ERR, "CRIT: Could not retrieve PAM_USER. Denying.");
         return PAM_AUTH_ERR;
     }
@@ -121,12 +168,12 @@ pam_sm_authenticate(pam_handle_t *pamh, int flags,
         }
     }
 
-    // If no lists are provided, the module does not apply to anyone
+    // If no lists are provided, the module does nothing for any user
     if (!users_list_str && !groups_list_str) {
         return PAM_SUCCESS;
     }
 
-    // 3. Check if the user matches any of the lists
+    // 3. Check if the user matches one of the lists
     if (users_list_str && is_user_in_listed_users(user, users_list_str)) {
         user_match = 1;
     }
@@ -139,8 +186,9 @@ pam_sm_authenticate(pam_handle_t *pamh, int flags,
         return PAM_SUCCESS;
     }
 
-    // Build reason for logging
+    // Build reason string for logging
     if (user_match && group_match) {
+        // snprintf is safe and will respect the MAX_REASON_LENGTH
         snprintf(match_reason, sizeof(match_reason), "user and group lists");
     } else if (user_match) {
         snprintf(match_reason, sizeof(match_reason), "users list");
@@ -153,21 +201,38 @@ pam_sm_authenticate(pam_handle_t *pamh, int flags,
     pam_get_item(pamh, PAM_TTY, (const void **)&tty_name);
     
     if (!tty_name || strlen(tty_name) == 0) {
-        pam_syslog(pamh, LOG_INFO, "USER=%s ACTION=LOGIN_SUCCESS Purpose='AUTOMATED_ACCESS (matched %s)'", user, match_reason);
+        log_pam_event(pamh, user, "LOGIN_SUCCESS", "AUTOMATED_ACCESS", match_reason, 1, PAM_SUCCESS);
         return PAM_SUCCESS;
     }
 
     // 5. Interactive Prompt
     char *purpose_response = NULL;
-    int retval = pam_prompt(pamh, PAM_PROMPT_ECHO_ON, &purpose_response, PURPOSE_PROMPT);
+    retval = pam_prompt(pamh, PAM_PROMPT_ECHO_ON, &purpose_response, PURPOSE_PROMPT);
 
-    if (retval == PAM_SUCCESS && purpose_response && strlen(purpose_response) > 0) {
-        pam_syslog(pamh, LOG_INFO, "USER=%s ACTION=LOGIN_SUCCESS Purpose='%s' (matched %s)", user, purpose_response, match_reason);
-        pam_ret_val = PAM_SUCCESS;
+    if (retval == PAM_SUCCESS && purpose_response) {
+        size_t purpose_len = strlen(purpose_response);
+
+        if (purpose_len == 0) {
+            // Failure: Empty response
+            log_pam_event(pamh, user, "LOGIN_DENIED", "Empty purpose", match_reason, 0, retval);
+            pam_ret_val = PAM_AUTH_ERR;
+        } else if (purpose_len > MAX_PURPOSE_LENGTH) {
+            // Failure: Response is too long
+            log_pam_event(pamh, user, "LOGIN_DENIED", "Purpose too long", match_reason, 0, retval);
+            pam_ret_val = PAM_AUTH_ERR;
+        } else {
+            // Success: Log and set return value to success
+            log_pam_event(pamh, user, "LOGIN_SUCCESS", purpose_response, match_reason, 1, PAM_SUCCESS);
+            pam_ret_val = PAM_SUCCESS;
+        }
     } else {
-        pam_syslog(pamh, LOG_ERR, "USER=%s ACTION=LOGIN_DENIED REASON='Prompt failed (retval=%i) or empty purpose' (matched %s)", user, retval, match_reason);
+        // Failure: pam_prompt() failed (e.g., user pressed Ctrl+C)
+        // retval now contains the error code from pam_prompt
+        log_pam_event(pamh, user, "LOGIN_DENIED", "Prompt failed/aborted", match_reason, 0, retval);
+        pam_ret_val = PAM_AUTH_ERR;
     }
 
+    // Clean up the memory allocated by pam_prompt
     if (purpose_response) {
         free(purpose_response);
     }
@@ -192,4 +257,5 @@ PAM_EXTERN int pam_sm_close_session(pam_handle_t *pamh, int flags, int argc, con
     (void)pamh; (void)flags; (void)argc; (void)argv;
     return PAM_SUCCESS;
 }
+
 
