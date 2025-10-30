@@ -28,7 +28,7 @@ install: all
 	fi
 
 clean:
-	@cargo clean
+	@-cargo clean
 
 .PHONY: all install clean
 

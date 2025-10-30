@@ -85,13 +85,14 @@ package-rpm:
 	@mkdir -p build
 	@# Use git archive for a clean, reproducible source tarball
 	@git archive --format=tgz --prefix=$(NAME)-$(VERSION)/ -o build/$(NAME)-$(VERSION).tar.gz HEAD
-	@echo "Running rpmbuild in container..."
+	@echo "Running rpmbuild..."
 	@# Use -bb (build binary) and explicitly point to the correct .spec file.
 	@# --define "_sourcedir ..." tells rpmbuild where to find the tarball.
-	@docker compose -f build-env/docker-compose.yml run --rm build-env-rhel rpmbuild -bb \
+	# @docker compose -f build-env/docker-compose.yaml run --rm build-env-rhel rpmbuild -bb
+	@rpmbuild -bb \
 		--define "_sourcedir /usr/src/app/build" \
 		/usr/src/app/packaging/rpm/pam-purpose.spec
-	@docker compose -f build-env/docker-compose.yml run --rm build-env-rhel rpmbuild -bb \
+	@rpmbuild -bb \
 		--define "_sourcedir /usr/src/app/build" \
 		/usr/src/app/packaging/rpm/pam-purpose-tool.spec
 
