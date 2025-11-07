@@ -1,7 +1,9 @@
 // pam_purpose.c - Hardened version with DUAL (syslog + auditd) logging
+// This version logs to both syslog (for operational debugging) and auditd
+// (for a secure, immutable audit trail).
 
 #include <security/pam_modules.h>
-#include <security/pam_ext.h>
+#include <security/pam_ext.h>    // For pam_prompt(), pam_syslog()
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -20,8 +22,10 @@
 
 // --- HELPER FUNCTIONS ---
 
-// Checks if the user is a member of any of the specified groups.
-// Returns 1 for yes, 0 for no.
+/**
+ * @brief Checks if the user is a member of any of the specified groups.
+ * @return 1 if user is in a group, 0 otherwise.
+ */
 int is_user_in_listed_groups(pam_handle_t *pamh, const char *user, const char *groups_list_str) {
     if (!user || !groups_list_str) return 0;
 
@@ -34,6 +38,10 @@ int is_user_in_listed_groups(pam_handle_t *pamh, const char *user, const char *g
 
     int ngroups = 0;
     getgrouplist(user, pw->pw_gid, NULL, &ngroups); // Get the number of groups
+    if (ngroups <= 0) {
+        return 0; // User has no supplementary groups
+    }
+
     gid_t *groups = malloc(sizeof(gid_t) * ngroups);
     if (!groups) {
         pam_syslog(pamh, LOG_CRIT, "CRIT: Failed to allocate memory for group list.");
@@ -70,13 +78,15 @@ int is_user_in_listed_groups(pam_handle_t *pamh, const char *user, const char *g
     return found;
 }
 
-// Checks if the user is on the specified user list.
-// Returns 1 for yes, 0 for no.
+/**
+ * @brief Checks if the user is on the specified user list.
+ * @return 1 if user is on the list, 0 otherwise.
+ */
 int is_user_in_listed_users(const char *user, const char *users_list_str) {
     if (!user || !users_list_str) return 0;
 
     char *list_copy = strdup(users_list_str);
-    if (!list_copy) return 0; // Error handling in calling function
+    if (!list_copy) return 0; // Error will be logged by caller if critical
 
     char *token = strtok(list_copy, ",");
     int found = 0;
@@ -91,16 +101,20 @@ int is_user_in_listed_users(const char *user, const char *users_list_str) {
     return found;
 }
 
-// --- NEW HELPER FUNCTION: DUAL LOGGING (AUDITD + SYSLOG) ---
+/**
+ * @brief Helper function to log the PAM event to both auditd and syslog.
+ * This provides a secure audit trail (auditd) and an operational log (syslog).
+ */
 static void log_pam_event(pam_handle_t *pamh, const char *user, const char *action, 
-                          const char *purpose, const char *match_reason, int success, int pam_retval)
+                         const char *purpose, const char *match_reason, int success, int pam_retval)
 {
     int au_fd = -1;
-    char msg_buf[1024];
+    char msg_buf[1024]; // Buffer for the log payload
     const char *tty_name = NULL;
     const char *rhost = NULL;
+    int log_level = success ? LOG_INFO : LOG_ERR;
 
-    // 1. Get additional context from PAM
+    // 1. Get additional context from PAM (TTY, Remote Host)
     pam_get_item(pamh, PAM_TTY, (const void **)&tty_name);
     pam_get_item(pamh, PAM_RHOST, (const void **)&rhost);
 
@@ -117,10 +131,17 @@ static void log_pam_event(pam_handle_t *pamh, const char *user, const char *acti
     au_fd = audit_open();
     if (au_fd < 0) {
         // If we can't open auditd, log this error *to syslog*
+        // This can happen if auditd is not running or if AppArmor/SELinux blocks it.
+        // We use 'errno' to get the specific reason (e.g., 13 = Permission Denied).
         pam_syslog(pamh, LOG_CRIT, "CRIT: Failed to open auditd connection (errno=%d). PAM_PURPOSE FAILED.", errno);
     } else {
+        // Send the message to auditd
+        // AUDIT_USER_AUTH (type 1100) is for user authentication events.
         if (audit_log_user_message(au_fd, AUDIT_USER_AUTH, msg_buf,
-                                   rhost, NULL, tty_name, success) <= 0) {
+                                   rhost,   // hostname (remote host)
+                                   NULL,    // addr (let auditd resolve it)
+                                   tty_name,
+                                   success) <= 0) {
             // If writing to auditd fails, log this error *to syslog*
             pam_syslog(pamh, LOG_ERR, "Failed to write to auditd. Message was: %s", msg_buf);
         }
@@ -129,7 +150,7 @@ static void log_pam_event(pam_handle_t *pamh, const char *user, const char *acti
 
     // --- 4. Log to syslog (The operational/debug log) ---
     // We log to syslog regardless, so administrators can see it in journalctl -f
-    int log_level = (success == 1) ? LOG_INFO : LOG_ERR;
+    // This ensures operational visibility even if auditd fails.
     pam_syslog(pamh, log_level, "%s", msg_buf);
 }
 
@@ -147,7 +168,7 @@ pam_sm_authenticate(pam_handle_t *pamh, int flags,
     const char *groups_list_str = NULL;
     int user_match = 0;
     int group_match = 0;
-    // Use the new, larger constant for match_reason buffer
+    // Use the larger constant for match_reason buffer
     char match_reason[MAX_REASON_LENGTH] = "not specified";
     // Default to denying access (Fail-Safe)
     int pam_ret_val = PAM_AUTH_ERR; 
@@ -156,7 +177,7 @@ pam_sm_authenticate(pam_handle_t *pamh, int flags,
     // 1. Get user
     if ((retval = pam_get_user(pamh, &user, NULL)) != PAM_SUCCESS || !user) {
         pam_syslog(pamh, LOG_ERR, "CRIT: Could not retrieve PAM_USER. Denying.");
-        return PAM_AUTH_ERR;
+        return PAM_AUTH_ERR; // Cannot proceed without a user
     }
 
     // 2. Parse arguments for user and group lists
@@ -196,11 +217,51 @@ pam_sm_authenticate(pam_handle_t *pamh, int flags,
         snprintf(match_reason, sizeof(match_reason), "groups list");
     }
 
-    // 4. Detect Non-Interactive Session
+    // 4. Detect Non-Interactive Session (Robust Check)
     const char *tty_name = NULL;
+    const char *service_name = NULL;
+    const char *ssh_command = NULL;
+    int is_interactive = 1; // Assume interactive by default
+
     pam_get_item(pamh, PAM_TTY, (const void **)&tty_name);
+    pam_get_item(pamh, PAM_SERVICE, (const void **)&service_name);
+    ssh_command = pam_getenv(pamh, "SSH_ORIGINAL_COMMAND");
     
+    // --- ADDED DEBUG LOGGING ---
+    // Log the values we are using to make the decision.
+    // We use LOG_INFO to ensure it appears in the default journal.
+    #define DEBUG true
+    #ifdef DEBUG
+    pam_syslog(pamh, LOG_INFO, "op=pam_purpose state=DEBUG user=%s pam_tty=\"%s\" pam_service=\"%s\" ssh_command=\"%s\"",
+        user ? user : "unknown",
+        tty_name ? tty_name : "NULL",
+        service_name ? service_name : "NULL",
+        ssh_command ? ssh_command : "NULL");
+    #endif
+    // --- END DEBUG LOGGING ---
+
     if (!tty_name || strlen(tty_name) == 0) {
+        // Case 1: No TTY info at all. Definitely not interactive.
+        is_interactive = 0;
+    } else if (service_name && (strcmp(service_name, "sftp") == 0 || strcmp(service_name, "scp") == 0)) {
+        // Case 2: Service is file transfer. Not interactive.
+        is_interactive = 0;
+    } else if (strcmp(tty_name, "ssh") == 0) {
+        // Case 3: TTY is the literal string "ssh". This is a non-interactive command.
+        is_interactive = 0;
+    } else if (ssh_command != NULL) {
+        // Case 4 (THE FIX): A command is present, even if a TTY was allocated
+        // for password auth (e.g., Ansible). This is a non-interactive execution.
+        is_interactive = 0;
+    } else if (isatty(0) == 0) {
+        // --- NEW LOGIC: Check if stdin (fd 0) is a TTY ---
+        // isatty(0) returns 1 if stdin is a terminal, 0 otherwise.
+        is_interactive = 0;
+    }
+
+
+    if (!is_interactive) {
+        // Log automated access and permit
         log_pam_event(pamh, user, "LOGIN_SUCCESS", "AUTOMATED_ACCESS", match_reason, 1, PAM_SUCCESS);
         return PAM_SUCCESS;
     }
@@ -241,6 +302,9 @@ pam_sm_authenticate(pam_handle_t *pamh, int flags,
 }
 
 // --- PAM STUBS ---
+// These functions are required by the PAM API but not used by this module.
+// We explicitly mark parameters as unused to avoid compiler warnings.
+
 PAM_EXTERN int pam_sm_setcred(pam_handle_t *pamh, int flags, int argc, const char **argv) {
     (void)pamh; (void)flags; (void)argc; (void)argv;
     return PAM_SUCCESS;
