@@ -1,7 +1,7 @@
-# Require-purpose PAM module
+# pam_purpose PAM module
 ## A KvalitetsIT extensions for PAM
 
-require-purpose is a PAM module for asking users for the purpose of their login to hosts 
+pam_purpose is a PAM module for asking users for the purpose of their login to hosts 
 used in KIT K8s installations. The purpose is to simply enquire why a user logs on to a
 host and notice this in the audit log. If the audit log is correctly configured this
 information will be used to correlate actions with a given task to be handled.
